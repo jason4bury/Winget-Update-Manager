@@ -1,0 +1,19 @@
+# Build output - exes live in ..\Builds and are attached to GitHub Releases
+*.exe
+*.zip
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Real config and secrets (this tool has none today, kept as a safety net)
+config.local.json
+.env
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+*.swp

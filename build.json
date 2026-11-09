@@ -1,0 +1,12 @@
+{
+    "AppName": "Winget Update Manager",
+    "EntryScript": "src\\Winget-Update-Manager.ps1",
+    "Icon": "assets\\icon.ico",
+    "Side": "Home",
+    "IncludeFiles": [],
+    "Ps2exe": {
+        "STA": true,
+        "RequireAdmin": true,
+        "NoConsole": true
+    }
+}
