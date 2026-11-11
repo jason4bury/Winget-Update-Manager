@@ -8,6 +8,19 @@ numbering (1.0.0 to 1.15.4, as "WinGet GUI") is kept in
 
 ## [Unreleased]
 
+## [1.01] - 2026-11-11
+### Changed
+- **Details show automatically.** Selecting an app fills the Details pane by itself, so the
+  Show Details button has gone. There's a short pause after each change of selection, so
+  arrowing down the list doesn't start a winget lookup for every row passed. Double-clicking
+  an app still works.
+- Lookups run in the background, separate from the main winget job, so the list stays usable
+  while details load. Moving to another app drops a lookup that's still running.
+- Details already looked at are kept for the session and appear instantly when you go back.
+- Selecting several apps lists them in the Details pane and asks you to pick just one.
+- A lookup that takes more than 60 seconds, or that fails, can be retried by double-clicking
+  the app. A lookup over 60 seconds is stopped, with a note saying so.
+
 ## [1.00] - 2026-11-07
 First release in the house style. It carries over everything from 1.15.4, plus the
 fixes below from the pre-upload review.

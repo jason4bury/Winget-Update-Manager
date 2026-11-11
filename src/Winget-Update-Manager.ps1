@@ -46,7 +46,7 @@
     Upgrades everything with no window and logs to %ProgramData%.
 
 .NOTES
-    Version:   1.00 (keep in step with CHANGELOG.md)
+    Version:   1.01 (keep in step with CHANGELOG.md)
     Author:    Jason Rhodes
     Licence:   MIT - see LICENSE
     Settings:  %APPDATA%\Winget Update Manager\settings.json
@@ -63,7 +63,7 @@ param(
 # The app's display name, used for the window, dialogs and the settings/log folders.
 $script:AppName    = 'Winget Update Manager'
 # Must match the newest version in CHANGELOG.md (the build reads the exe version from there).
-$script:AppVersion = '1.00'
+$script:AppVersion = '1.01'
 
 $script:cliMode = [bool]$UpgradeAll
 $script:showConsole = $script:cliMode -and -not $Silent
@@ -891,15 +891,13 @@ if (-not $script:WingetExe) {
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Top" Text="DETAILS" Style="{StaticResource CardTitle}"/>
                         <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                            <Button x:Name="BtnDetails" Content="Show Details" Tag="&#xE946;" Style="{StaticResource SkyButton}"
-                                    ToolTip="Show details for the selected package (or double-click it)"/>
                             <Button x:Name="BtnHomepage" Content="Homepage" Tag="&#xE8A7;" IsEnabled="False"/>
                             <Button x:Name="BtnReleaseNotes" Content="Release Notes" Tag="&#xE8A7;" IsEnabled="False"/>
                         </WrapPanel>
                         <ScrollViewer x:Name="ScrDetails" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,0">
                             <StackPanel x:Name="PnlDetails" Margin="0,0,10,0">
                                 <TextBlock x:Name="TxtDetails" TextWrapping="Wrap" Foreground="#5E5672" LineHeight="20"
-                                           Text="Pick a package and click Show Details (or just double-click it) to see who makes it, what it does and where to find out more."/>
+                                           Text="Pick an app in the list to see who makes it, what it does and where to find out more."/>
                             </StackPanel>
                         </ScrollViewer>
                     </DockPanel>
@@ -1047,7 +1045,6 @@ $chkRemoveDesktopIcons = $window.FindName('ChkRemoveDesktopIcons')
 $txtFilter            = $window.FindName('TxtFilter')
 $btnClearFilter       = $window.FindName('BtnClearFilter')
 $dataGrid             = $window.FindName('Grid1')
-$btnDetails           = $window.FindName('BtnDetails')
 $btnHomepage          = $window.FindName('BtnHomepage')
 $btnReleaseNotes      = $window.FindName('BtnReleaseNotes')
 $pnlDetails           = $window.FindName('PnlDetails')
@@ -1323,6 +1320,22 @@ $script:currentQueueItem = $null
 $timer = New-Object System.Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromMilliseconds(400)
 
+# Details pane: looked up automatically when an app is selected. A short pause after
+# each selection change means arrowing down the list doesn't start a winget run for
+# every row passed; lookups run in the background (separate from the main winget
+# job, so the list stays usable) and results are kept for the rest of the session.
+$script:detailsProc       = $null
+$script:detailsOut        = $null
+$script:detailsErr        = $null
+$script:detailsKey        = $null
+$script:detailsLookupItem = $null
+$script:detailsStarted    = $null
+$script:detailsCache      = @{}
+$detailsDelayTimer = New-Object System.Windows.Threading.DispatcherTimer
+$detailsDelayTimer.Interval = [TimeSpan]::FromMilliseconds(350)
+$detailsPollTimer = New-Object System.Windows.Threading.DispatcherTimer
+$detailsPollTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+
 # Some installers/updaters (Chrome, Edge, Zoom, Adobe products, etc.) create or
 # refresh their desktop shortcut via a separate background process *after* winget's
 # own process has already exited, so a single before/after check right when winget
@@ -1532,7 +1545,6 @@ function Update-ActionButton {
     $btnUninstallSelected.IsEnabled = $idle -and $mode -eq 'installed'
     $btnExcludeSelected.IsEnabled   = $idle -and $mode -in @('updates', 'installed')
     $btnRemoveExclusion.IsEnabled   = $idle -and $mode -eq 'pins'
-    $btnDetails.IsEnabled           = $idle -and $count -ge 1
 }
 
 function Set-UiBusy {
@@ -1547,8 +1559,8 @@ function Set-UiBusy {
     $progress.Visibility      = if ($Busy) { 'Visible' } else { 'Collapsed' }
     $progress.IsIndeterminate = $Busy
 
-    # The progress card over the list. Not for the quick Details lookup.
-    if ($Busy -and $script:mode -ne 'details') {
+    # The progress card over the list.
+    if ($Busy) {
         if ($pnlBusy.Visibility -ne 'Visible') {
             $script:busyStart = Get-Date
             $txtBusyTime.Text = ''
@@ -1875,21 +1887,115 @@ function Set-DetailLink {
 }
 
 function Show-PackageDetail {
-    $item = $dataGrid.SelectedItem
-    if (-not $item -or $script:busy) { return }
+    # Fills the Details pane for whatever is selected in the list.
+    $detailsDelayTimer.Stop()
+    $selected = @($dataGrid.SelectedItems)
 
+    if ($selected.Count -ne 1) {
+        Stop-DetailLookup
+        $script:detailsItem = $null
+        Set-DetailLink
+        if ($selected.Count -eq 0) {
+            Show-DetailsMessage -Message 'Pick an app in the list to see who makes it, what it does and where to find out more.'
+        } else {
+            $names = ($selected | Select-Object -First 8 | ForEach-Object { ([string][char]0x2022) + '  ' + $_.Name }) -join "`r`n"
+            if ($selected.Count -gt 8) { $names += "`r`n...and $($selected.Count - 8) more" }
+            Show-DetailsMessage -Title "$($selected.Count) apps selected" `
+                -Message "Select just one app to see its details.`r`n`r`n$names"
+        }
+        return
+    }
+
+    $item = $selected[0]
+    if ($item -eq $script:detailsItem) { return }     # already showing (or loading) this one
     $script:detailsItem = $item
     Set-DetailLink
+
     if (-not $item.Source) {
+        Stop-DetailLookup
         Show-DetailsMessage -Title $item.Name -Subtitle $item.Id -Message "This app wasn't installed from a winget source, so winget has no details for it."
         return
     }
 
+    $key = "$($item.Source)|$($item.Id)"
+    if ($script:detailsCache.ContainsKey($key)) {
+        Stop-DetailLookup
+        Complete-PackageDetail -Output $script:detailsCache[$key]
+        return
+    }
+
     Show-DetailsMessage -Title $item.Name -Subtitle $item.Id -Message 'Looking up the details...'
-    $id = $item.Id
-    Start-WingetOperation -Arguments "show --id `"$id`" -e --source `"$($item.Source)`" --accept-source-agreements --disable-interactivity" `
-        -Mode 'details' -StatusText "Loading details for $($item.Name)..." -NoLogStream
+    Start-DetailLookup -Item $item -Key $key
 }
+
+function Start-DetailLookup {
+    param($Item, [string]$Key)
+    Stop-DetailLookup
+    $script:detailsOut        = [System.IO.Path]::GetTempFileName()
+    $script:detailsErr        = [System.IO.Path]::GetTempFileName()
+    $script:detailsKey        = $Key
+    $script:detailsLookupItem = $Item
+    $script:detailsStarted    = Get-Date
+    try {
+        $script:detailsProc = Start-HiddenProcess -FilePath $script:WingetExe `
+            -Arguments "show --id `"$($Item.Id)`" -e --source `"$($Item.Source)`" --accept-source-agreements --disable-interactivity" `
+            -OutFile $script:detailsOut -ErrFile $script:detailsErr `
+            -WorkingDirectory (Split-Path -Parent $script:WingetExe)
+        $detailsPollTimer.Start()
+    } catch {
+        Stop-DetailLookup
+        Show-DetailsMessage -Title $Item.Name -Subtitle $Item.Id -Message "Couldn't look up the details: $($_.Exception.Message)"
+    }
+}
+
+function Stop-DetailLookup {
+    # Drops any lookup still running (e.g. the selection moved on before it finished).
+    $detailsPollTimer.Stop()
+    if ($script:detailsProc) {
+        try { if (-not $script:detailsProc.HasExited) { Stop-ProcessTree -Process $script:detailsProc } } catch { }
+        try { $script:detailsProc.Dispose() } catch { }
+    }
+    if ($script:detailsOut -or $script:detailsErr) {
+        Remove-Item -LiteralPath $script:detailsOut, $script:detailsErr -ErrorAction SilentlyContinue
+    }
+    $script:detailsProc = $null; $script:detailsOut = $null; $script:detailsErr = $null
+    $script:detailsKey  = $null; $script:detailsLookupItem = $null
+}
+
+$detailsDelayTimer.Add_Tick({ Show-PackageDetail })
+
+$detailsPollTimer.Add_Tick({
+    $p = $script:detailsProc
+    if (-not $p) { $detailsPollTimer.Stop(); return }
+    if (-not $p.HasExited) {
+        if (((Get-Date) - $script:detailsStarted).TotalSeconds -gt 60) {
+            $item = $script:detailsLookupItem
+            Stop-DetailLookup
+            if ($item -and $item -eq $script:detailsItem) {
+                Show-DetailsMessage -Title $item.Name -Subtitle $item.Id -Message "winget took too long to answer. Double-click the app to try again."
+                $script:detailsItem = $null     # so a double-click starts a fresh lookup
+            }
+        }
+        return
+    }
+
+    $detailsPollTimer.Stop()
+    $output = [string](Read-OutputFile -Path $script:detailsOut)
+    $code   = $null
+    try { $code = $p.ExitCode } catch { }
+    $key    = $script:detailsKey
+    $item   = $script:detailsLookupItem
+    Stop-DetailLookup
+
+    # Only remember proper answers, so a network blip doesn't stick for the session.
+    $ok = $code -eq 0 -and $output -match '(?m)^Found '
+    if ($ok) { $script:detailsCache[$key] = $output }
+    if ($item -and $item -eq $script:detailsItem) {
+        Complete-PackageDetail -Output $output
+        # After a failed lookup, let a double-click on the same app try again.
+        if (-not $ok) { $script:detailsItem = $null }
+    }
+})
 
 function New-DetailsText {
     # A wrapped TextBlock for the Details pane.
@@ -2432,10 +2538,6 @@ function Complete-Cancel {
             if ($chkRemoveDesktopIcons.IsChecked) { Start-DesktopWatch -Before $script:preShortcuts -RelatedNames $script:relatedNames }
             Start-UpdateCheck -KeepLog
         }
-        'details' {
-            Show-DetailsMessage -Message 'Cancelled.'
-            Set-UiBusy -Busy $false -Status 'Stopped. No worries.'
-        }
         default {
             Write-AppLog "`r`n----- Cancelled -----`r`n"
             Set-UiBusy -Busy $false -Status 'Stopped. No worries.'
@@ -2572,10 +2674,6 @@ $timer.Add_Tick({
                 Set-UiBusy -Busy $false -Status $(if ($listFailed) { $failedStatus } elseif ($rows.Count -eq 0) { 'No apps excluded - Upgrade All updates everything.' } else { "$($rows.Count) app(s) left alone by Upgrade All." })
                 Write-AppLog "`r`n$($rows.Count) app(s) excluded from Upgrade All.`r`n"
             }
-            'details' {
-                Complete-PackageDetail -Output $finalContent
-                Set-UiBusy -Busy $false -Status 'Ready.'
-            }
             'queue' {
                 Add-QueueResult -Item $script:currentQueueItem -Status 'Done' -ExitCode $exitCode
                 Start-NextQueuedPackage
@@ -2611,7 +2709,12 @@ $timer.Add_Tick({
 # ---------------------------------------------------------------------------
 # Event handlers
 # ---------------------------------------------------------------------------
-$dataGrid.Add_SelectionChanged({ Update-ActionButton })
+$dataGrid.Add_SelectionChanged({
+    Update-ActionButton
+    # Restart the short pause; the details load once the selection settles.
+    $detailsDelayTimer.Stop()
+    $detailsDelayTimer.Start()
+})
 
 $dataGrid.Add_MouseDoubleClick({
     param($source, $e)
@@ -2630,7 +2733,6 @@ $btnInstalled.Add_Click({ Start-ListInstalled })
 $btnExcluded.Add_Click({ Start-PinList })
 $btnCancel.Add_Click({ Request-Cancel })
 $btnBusyCancel.Add_Click({ Request-Cancel })
-$btnDetails.Add_Click({ Show-PackageDetail })
 $btnHomepage.Add_Click({ Open-Url -Url $script:HomepageUrl })
 $btnReleaseNotes.Add_Click({ Open-Url -Url $script:ReleaseNotesUrl })
 
@@ -2808,6 +2910,10 @@ $txtSearchQuery.Add_KeyDown({
 # ---------------------------------------------------------------------------
 $script:AboutWhatsNew = [ordered]@{
     $script:AppVersion = @(
+        'The Details pane fills in by itself when you select an app - no Show Details button to click',
+        'Details you have already looked at appear instantly, and the list stays usable while they load'
+    )
+    '1.00' = @(
         'First release in the new house style, with settings now in %APPDATA%\Winget Update Manager',
         'A failed check now says so, instead of showing "You''re all up to date"',
         'Desktop icon tidy-up is pickier, so it leaves unrelated new icons alone',
@@ -2953,6 +3059,8 @@ $window.Add_Closing({
     $script:queue.Clear()
     $timer.Stop()
     $desktopWatchTimer.Stop()
+    $detailsDelayTimer.Stop()
+    Stop-DetailLookup
     $leftovers = @($script:tempOut, $script:tempErr, $script:diagTemp) | Where-Object { $_ }
     if ($leftovers) { Remove-Item -LiteralPath $leftovers -ErrorAction SilentlyContinue }
 })

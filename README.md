@@ -6,7 +6,7 @@
 
 A friendly window for winget: check for updates, upgrade, install and remove apps without the command line.
 
-![Version](https://img.shields.io/badge/version-v1.00-5B7CFA)
+![Version](https://img.shields.io/badge/version-v1.01-5B7CFA)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE?logo=powershell&logoColor=white)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
@@ -20,7 +20,7 @@ A friendly window for winget: check for updates, upgrade, install and remove app
 - **Installed Apps** lists everything on the PC, including apps that didn't come from winget, with **Uninstall Selected**.
 - **Exclude Selected** keeps chosen apps out of Upgrade All. Exclusions are winget pins, so they also apply to `winget upgrade --all` and to unattended mode.
 - **Export List** and **Import List** copy a set of apps from one PC to another (`winget export` / `winget import`).
-- **Details pane** with the publisher, licence, description, release notes and tags, plus Homepage and Release Notes buttons.
+- **Details pane** that fills in by itself when you select an app: the publisher, licence, description, release notes and tags, plus Homepage and Release Notes buttons.
 - **Live log** with a progress card, a Cancel button that also stops the installer winget started, and **Save Log**.
 - **Tidy up new desktop icons** that installs and upgrades leave behind, only removing icons whose names match the apps involved.
 - **Reset Sources** and **Diagnose Network** for the "Failed when searching source" errors, including proxy and SSL inspection checks.
@@ -39,7 +39,7 @@ A friendly window for winget: check for updates, upgrade, install and remove app
 
 ## 📦 Installation
 
-**Exe:** download `Winget Update Manager v1.00.exe` from the [Releases](../../releases) page and run it. Nothing else to install.
+**Exe:** download `Winget Update Manager v1.01.exe` from the [Releases](../../releases) page and run it. Nothing else to install.
 
 **Script:** clone the repo, or download it as a zip, and run:
 
@@ -65,7 +65,7 @@ Open the app and it checks for updates straight away. Use the sidebar to switch 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\src\Winget-Update-Manager.ps1 -UpgradeAll -Silent
-"Winget Update Manager v1.00.exe" -UpgradeAll -Silent
+"Winget Update Manager v1.01.exe" -UpgradeAll -Silent
 ```
 
 | Switch | What it does |
