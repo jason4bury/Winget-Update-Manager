@@ -1,5 +1,5 @@
 @{
-    # Used by Build-Tool.ps1 and by hand:
+    # Used by Build.cmd and by hand:
     #   Invoke-ScriptAnalyzer -Path .\src -Settings .\PSScriptAnalyzerSettings.psd1
     Severity     = @('Error', 'Warning')
     ExcludeRules = @(

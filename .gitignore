@@ -1,6 +1,8 @@
-# Build output - exes live in ..\Builds and are attached to GitHub Releases
+# Build output - release folders, zips and the shortcut live in ..\Builds; the zip is attached to GitHub Releases
+Builds/
 *.exe
 *.zip
+*.lnk
 
 # Logs and temp files
 *.log

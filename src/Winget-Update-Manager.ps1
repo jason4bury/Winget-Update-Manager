@@ -39,17 +39,21 @@
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\Winget-Update-Manager.ps1
-    Opens the GUI.
+    Opens the GUI. Normally it's started from the "Winget Update Manager" shortcut, which
+    "Winget Update Manager.cmd" makes in the release folder and the Start menu.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\Winget-Update-Manager.ps1 -UpgradeAll -Silent
     Upgrades everything with no window and logs to %ProgramData%.
 
 .NOTES
-    Version:   1.01 (keep in step with CHANGELOG.md)
+    Version:   1.02 (keep in step with CHANGELOG.md)
     Author:    Jason Rhodes
     Licence:   MIT - see LICENSE
     Settings:  %APPDATA%\Winget Update Manager\settings.json
+    Layout:    a release folder (Builds\Winget Update Manager v<version>\) holds this script
+               with assets\ beside it; in the repo it's src\ with assets\ one folder up.
+               There is no exe any more (antivirus kept flagging the PS2EXE build).
 #>
 param(
     [switch]$UpgradeAll,
@@ -62,19 +66,22 @@ param(
 
 # The app's display name, used for the window, dialogs and the settings/log folders.
 $script:AppName    = 'Winget Update Manager'
-# Must match the newest version in CHANGELOG.md (the build reads the exe version from there).
-$script:AppVersion = '1.01'
+# Must match the newest version in CHANGELOG.md (Build.cmd checks they agree).
+$script:AppVersion = '1.02'
+# Taskbar ID, the same one the shortcut carries, so the taskbar button shows this app's icon
+# and a pinned button starts the app (see New-WingetUpdateManagerShortcut.ps1).
+$script:AppId      = 'jason4bury.Winget-Update-Manager'
 
 $script:cliMode = [bool]$UpgradeAll
 $script:showConsole = $script:cliMode -and -not $Silent
 
 # ---------------------------------------------------------------------------
 # Hide the PowerShell console window this script is running in, if any, so
-# only the GUI shows. The compiled .exe (see README) already has no console
-# via ps2exe's -noConsole switch, so this is a no-op there; it's for running
-# the .ps1 directly (double-click, a shortcut, or an existing terminal),
-# where a console window would otherwise sit behind/alongside the GUI. Done
-# as early as possible to minimise any visible flash before it takes effect.
+# only the GUI shows. The shortcut already starts it without a visible console
+# (conhost --headless on Windows 11, a hidden window before that); this covers
+# running the .ps1 any other way (Start ...cmd, a terminal), where a console
+# window would otherwise sit behind/alongside the GUI. Done as early as
+# possible to minimise any visible flash before it takes effect.
 # Left visible in -UpgradeAll mode (unless -Silent) so progress can be seen.
 # ---------------------------------------------------------------------------
 if (-not $script:showConsole) {
@@ -95,17 +102,6 @@ if (-not $script:showConsole) {
     }
 }
 
-# ---------------------------------------------------------------------------
-# If this script has been compiled to a standalone .exe (e.g. with the ps2exe
-# module), the host process is that .exe rather than powershell.exe/pwsh.exe,
-# so the manual relaunch tricks below don't apply and would just misfire.
-# Compile with ps2exe's own -STA and -requireAdmin switches instead, which bake
-# both requirements into the .exe's manifest and are handled by Windows before
-# our code even starts running. See README.md for the exact build command.
-# ---------------------------------------------------------------------------
-$hostExeName   = [System.IO.Path]::GetFileNameWithoutExtension((Get-Process -Id $PID).Path)
-$isCompiledExe = $hostExeName -notin @('powershell', 'pwsh', 'powershell_ise')
-
 function Get-RelaunchArgument {
     # Rebuilds the command line for a relaunch, passing along whatever parameters
     # this run was started with (e.g. -UpgradeAll -Silent) so they aren't lost.
@@ -123,47 +119,66 @@ function Get-RelaunchArgument {
 }
 $script:boundParams = $PSBoundParameters
 
-if (-not $isCompiledExe) {
-    # -------------------------------------------------------------------
-    # Installing/upgrading software and managing shortcuts on the shared
-    # Public Desktop both normally need administrator rights, so relaunch
-    # elevated automatically if we're not already running as admin, rather
-    # than hitting "Access is denied" errors partway through.
-    # -------------------------------------------------------------------
-    $currentIdentity  = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $currentPrincipal = New-Object System.Security.Principal.WindowsPrincipal($currentIdentity)
-    if (-not $currentPrincipal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        $exe = (Get-Process -Id $PID).Path
-        $windowStyle = if ($script:showConsole) { 'Normal' } else { 'Hidden' }
-        try {
-            # -STA is included here too so an elevated relaunch satisfies both requirements
-            # (admin rights and a WPF-compatible thread) in a single relaunch.
-            Start-Process -FilePath $exe -ArgumentList (Get-RelaunchArgument) -Verb RunAs -WindowStyle $windowStyle | Out-Null
-        } catch {
-            # Most likely the UAC prompt was cancelled, or this account can't elevate at all.
-            if (-not $script:cliMode) {
-                Add-Type -AssemblyName System.Windows.Forms
-                [System.Windows.Forms.MessageBox]::Show(
-                    "$($script:AppName) needs to run as Administrator (installing/upgrading software " +
-                    "and managing the shared Public Desktop both require it), but elevation was cancelled " +
-                    "or failed.`r`n`r`n$($_.Exception.Message)",
-                    $script:AppName, 'OK', 'Error') | Out-Null
-            }
-            exit 1
+# ---------------------------------------------------------------------------
+# Installing/upgrading software and managing shortcuts on the shared Public
+# Desktop both normally need administrator rights, so relaunch elevated
+# automatically if we're not already running as admin, rather than hitting
+# "Access is denied" errors partway through. (The old exe asked for admin in
+# its manifest; the script does it here, so the shortcut needs no special flag.)
+# ---------------------------------------------------------------------------
+$currentIdentity  = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$currentPrincipal = New-Object System.Security.Principal.WindowsPrincipal($currentIdentity)
+if (-not $currentPrincipal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    $exe = (Get-Process -Id $PID).Path
+    $windowStyle = if ($script:showConsole) { 'Normal' } else { 'Hidden' }
+    try {
+        # -STA is included here too so an elevated relaunch satisfies both requirements
+        # (admin rights and a WPF-compatible thread) in a single relaunch.
+        $elevated = Start-Process -FilePath $exe -ArgumentList (Get-RelaunchArgument) -Verb RunAs -WindowStyle $windowStyle -PassThru
+    } catch {
+        # Most likely the UAC prompt was cancelled, or this account can't elevate at all.
+        if (-not $script:cliMode) {
+            Add-Type -AssemblyName System.Windows.Forms
+            [System.Windows.Forms.MessageBox]::Show(
+                "$($script:AppName) needs to run as Administrator (installing/upgrading software " +
+                "and managing the shared Public Desktop both require it), but elevation was cancelled " +
+                "or failed.`r`n`r`n$($_.Exception.Message)",
+                $script:AppName, 'OK', 'Error') | Out-Null
         }
-        exit
+        exit 1
     }
-
-    # WPF needs an STA thread. Windows PowerShell defaults to STA, but PowerShell 7 (pwsh)
-    # defaults to MTA, so relaunch ourselves with -STA if needed. (Normally already satisfied
-    # by the elevation relaunch above, but this covers running the script from an already-
-    # elevated pwsh session directly.) Not needed for -UpgradeAll, which has no window.
-    if (-not $script:cliMode -and [System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
-        $exe = (Get-Process -Id $PID).Path
-        Start-Process -FilePath $exe -ArgumentList (Get-RelaunchArgument) -WindowStyle Hidden
-        exit
+    if ($script:cliMode -and $elevated) {
+        # Unattended mode: wait for the elevated run and pass on winget's exit code, so a
+        # scheduled task sees the real result rather than this launcher's 0.
+        $null = $elevated.Handle   # keeps the exit code readable once it ends (PowerShell 5.1)
+        $elevated.WaitForExit()
+        exit $elevated.ExitCode
     }
+    exit
 }
+
+# WPF needs an STA thread. Windows PowerShell defaults to STA, but PowerShell 7 (pwsh)
+# defaults to MTA, so relaunch ourselves with -STA if needed. (Normally already satisfied
+# by the elevation relaunch above, but this covers running the script from an already-
+# elevated pwsh session directly.) Not needed for -UpgradeAll, which has no window.
+if (-not $script:cliMode -and [System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
+    $exe = (Get-Process -Id $PID).Path
+    Start-Process -FilePath $exe -ArgumentList (Get-RelaunchArgument) -WindowStyle Hidden
+    exit
+}
+
+# One taskbar button with this app's own icon (not PowerShell's), and pinning it pins the
+# app. Set in the elevated process, before any window exists. Cosmetic, so never fatal.
+try {
+    Add-Type -Namespace 'HomeTool' -Name 'Shell' -MemberDefinition '[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string appId);' -ErrorAction Stop
+    [void][HomeTool.Shell]::SetCurrentProcessExplicitAppUserModelID($script:AppId)
+} catch { }
+
+# Where the script lives, and its assets\ folder: beside the script in a release folder,
+# one folder up from src\ in the repo.
+$script:ProgramDir = Split-Path -Parent $PSCommandPath
+$script:AssetsDir  = @((Join-Path $script:ProgramDir 'assets'), (Join-Path (Split-Path -Parent $script:ProgramDir) 'assets')) |
+    Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 
 # ---------------------------------------------------------------------------
 # Find winget. Normally it's on PATH via its App Execution Alias, but not when
@@ -197,8 +212,8 @@ function Write-AppLog {
     if ([string]::IsNullOrEmpty($Text)) { return }
     if ($script:cliMode) {
         try { Add-Content -LiteralPath $script:cliLogPath -Value $Text -NoNewline -Encoding UTF8 } catch { }
-        # Never Write-Host here: a ps2exe -noConsole build turns console output into pop-ups.
-        if ($script:showConsole -and -not $isCompiledExe) { [Console]::Out.Write($Text) }
+        # [Console]::Out rather than Write-Host, so -Silent runs stay quiet in any host.
+        if ($script:showConsole) { [Console]::Out.Write($Text) }
         return
     }
     $txtLog.AppendText($Text)
@@ -393,8 +408,7 @@ function Remove-NewDesktopShortcut {
     if ($toRemove.Count -gt 0) {
         Write-AppLog "`r`nRemoving $($toRemove.Count) new desktop icon(s) created by this install/upgrade:`r`n"
         foreach ($p in $toRemove) {
-            # The app always runs elevated (see the relaunch logic at the top, or ps2exe's
-            # -requireAdmin for the .exe), so a failure here is a genuine problem such as the
+            # The app always runs elevated (see the relaunch logic at the top), so a failure here is a genuine problem such as the
             # file being locked, not a missing-rights issue that a second elevation would fix.
             try {
                 Remove-Item -LiteralPath $p -Force -ErrorAction Stop
@@ -409,10 +423,10 @@ function Remove-NewDesktopShortcut {
 function Start-HiddenProcess {
     <#
       Starts a console program with no window and its output sent to files.
-      Start-Process -NoNewWindow only avoids a new window when there's already a
-      console to share; the compiled .exe has none, so Windows would pop up a
-      command prompt window for every winget run. CreateNoWindow stops that, and
-      cmd.exe does the redirection to the files the log pane reads from.
+      Start-Process -NoNewWindow only avoids a new window when there's a visible
+      console to share; started from the shortcut there isn't one, so Windows could
+      pop up a command prompt window for every winget run. CreateNoWindow stops
+      that, and cmd.exe does the redirection to the files the log pane reads from.
     #>
     param([string]$FilePath, [string]$Arguments, [string]$OutFile, [string]$ErrFile, [string]$WorkingDirectory)
 
@@ -444,8 +458,12 @@ function Invoke-HiddenCapture {
 }
 
 function Get-WingetVersion {
+    # Asked once per session: the About window used to pause for a second or two every time.
+    if ($script:WingetVersionText) { return $script:WingetVersionText }
     $v = ([string](Invoke-HiddenCapture -FilePath $script:WingetExe -Arguments '--version' -TimeoutMs 10000)).Trim()
-    if ($v) { return ($v -split "`r?`n")[0] } else { return 'unknown' }
+    if (-not $v) { return 'unknown' }
+    $script:WingetVersionText = ($v -split "`r?`n")[0]
+    return $script:WingetVersionText
 }
 
 function Stop-ProcessTree {
@@ -988,31 +1006,15 @@ $window.Title = $script:AppName
 $window.FindName('TxtAppName').Text = $script:AppName
 
 # ---------------------------------------------------------------------------
-# Window / taskbar icon. Running the .ps1 from the repo, it's assets\icon.ico
-# (one folder up from src\); an icon.ico beside the script also works. The
-# compiled .exe uses the icon ps2exe embedded in it. If none of that works the
+# Window / taskbar icon: assets\Winget-Update-Manager.ico (beside the script in
+# a release, one folder up from src\ in the repo). If it can't be loaded the
 # window just keeps the default icon - purely cosmetic, so never fatal.
 # ---------------------------------------------------------------------------
 try {
-    $appPath   = if ($isCompiledExe) { (Get-Process -Id $PID).Path } else { $PSCommandPath }
-    $appFolder = if ($appPath) { Split-Path -Parent $appPath } else { $null }
-    $icoPath   = $null
-    if ($appFolder -and -not $isCompiledExe) {
-        $icoPath = @(
-            (Join-Path $appFolder 'icon.ico'),
-            (Join-Path (Split-Path -Parent $appFolder) 'assets\icon.ico')
-        ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    }
-
-    if ($icoPath) {
-        $window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$icoPath)
-    } elseif ($isCompiledExe -and $appPath) {
-        Add-Type -AssemblyName System.Drawing
-        $exeIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($appPath)
-        if ($exeIcon) {
-            $window.Icon = [System.Windows.Interop.Imaging]::CreateBitmapSourceFromHIcon(
-                $exeIcon.Handle, [System.Windows.Int32Rect]::Empty,
-                [System.Windows.Media.Imaging.BitmapSizeOptions]::FromEmptyOptions())
+    if ($script:AssetsDir) {
+        $icoPath = Join-Path $script:AssetsDir 'Winget-Update-Manager.ico'
+        if (Test-Path -LiteralPath $icoPath) {
+            $window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$icoPath)
         }
     }
 } catch {
@@ -1074,7 +1076,7 @@ $script:diagTemp      = $null
 
 # ---------------------------------------------------------------------------
 # The box mascot, embedded so the header and empty-list picture work even
-# without any image files next to the script (or inside the compiled .exe).
+# without any image files next to the script.
 # ---------------------------------------------------------------------------
 $script:MascotPng = @'
 iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAy50lEQVR42u19eZhcVZn37z3n3FtVvS9JZ+8k3Z30lpWGJJCQ6iRs
@@ -2910,6 +2912,10 @@ $txtSearchQuery.Add_KeyDown({
 # ---------------------------------------------------------------------------
 $script:AboutWhatsNew = [ordered]@{
     $script:AppVersion = @(
+        'No exe any more: it runs as a script from a shortcut, so antivirus no longer flags it by mistake',
+        'Pin it to the taskbar and the button keeps its own icon; it still asks for admin rights when it starts'
+    )
+    '1.01' = @(
         'The Details pane fills in by itself when you select an app - no Show Details button to click',
         'Details you have already looked at appear instantly, and the list stays usable while they load'
     )

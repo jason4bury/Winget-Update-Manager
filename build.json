@@ -1,12 +1,20 @@
 {
-    "AppName": "Winget Update Manager",
-    "EntryScript": "src\\Winget-Update-Manager.ps1",
-    "Icon": "assets\\icon.ico",
-    "Side": "Home",
-    "IncludeFiles": [],
-    "Ps2exe": {
-        "STA": true,
-        "RequireAdmin": true,
-        "NoConsole": true
-    }
+  "AppName": "Winget Update Manager",
+  "EntryScript": "src\\Winget-Update-Manager.ps1",
+  "Icon": "assets\\Winget-Update-Manager.ico",
+  "Side": "Home",
+  "Description": "PowerShell/WPF tool for managing winget updates",
+  "RequireAdmin": true,
+  "Release": {
+    "Files": {
+      "Winget-Update-Manager.ps1": "src\\Winget-Update-Manager.ps1",
+      "New-WingetUpdateManagerShortcut.ps1": "src\\New-WingetUpdateManagerShortcut.ps1",
+      "Winget Update Manager.cmd": "release\\Winget Update Manager.cmd",
+      "assets\\Winget-Update-Manager.ico": "assets\\Winget-Update-Manager.ico",
+      "README.md": "README.md",
+      "CHANGELOG.md": "CHANGELOG.md",
+      "LICENSE": "LICENSE"
+    },
+    "Shortcut": "New-WingetUpdateManagerShortcut.ps1"
+  }
 }

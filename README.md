@@ -6,7 +6,7 @@
 
 A friendly window for winget: check for updates, upgrade, install and remove apps without the command line.
 
-![Version](https://img.shields.io/badge/version-v1.01-5B7CFA)
+![Version](https://img.shields.io/badge/version-v1.02-5B7CFA)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE?logo=powershell&logoColor=white)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
@@ -34,39 +34,45 @@ A friendly window for winget: check for updates, upgrade, install and remove app
 ## 📋 Requirements
 
 - Windows 10 or 11 with [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1), which provides winget. winget 1.5 or later is needed for excluding apps (`winget pin`).
-- Windows PowerShell 5.1 (built into Windows) or PowerShell 7, when running the script rather than the exe.
+- Windows PowerShell 5.1 (built into Windows). PowerShell 7 also works when running the script yourself.
 - Administrator rights. The app asks for them (UAC) when it starts.
 
 ## 📦 Installation
 
-**Exe:** download `Winget Update Manager v1.01.exe` from the [Releases](../../releases) page and run it. Nothing else to install.
+1. Download `Winget-Update-Manager-v1.02.zip` from the [latest release](../../releases/latest) and unzip it wherever you like to keep it.
+2. Double-click **Winget Update Manager.cmd** in the unzipped folder. It makes a **Winget Update Manager** shortcut there and in the Start menu, and starts the app. From then on, use the shortcut, the Start menu or a pinned taskbar button.
 
-**Script:** clone the repo, or download it as a zip, and run:
+The app asks for administrator rights (UAC) each time it starts. Nothing is installed and no Windows settings are changed. The shortcut runs the script with PowerShell's execution policy bypassed for that run only.
+
+**From the repo:** clone it and double-click **Start Winget Update Manager.cmd**, or run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\src\Winget-Update-Manager.ps1
 ```
 
-The script relaunches itself elevated, and in STA mode under PowerShell 7, so it can be started from any prompt or by double-clicking.
+The script relaunches itself elevated, and in STA mode under PowerShell 7, so it can be started from any prompt.
 
-**Building the exe:** the exe is built with the shared build script, which reads `build.json` and the version from this CHANGELOG:
+### Why no exe
 
-```powershell
-E:\Created\_shared\Build-Tool.ps1 -Project "E:\Created\Home\Winget-Update-Manager"
-```
+Home tools used to ship as PS2EXE exes, and antivirus programs (ESET among them) kept flagging those exes as generic trojans by mistake. A plain script and a shortcut give the same one-click start without the false alarms, and you can read exactly what runs. Up to v1.01 this app was `Winget Update Manager v1.01.exe`; from v1.02 it's the script release above.
 
-It is compiled with ps2exe using `-STA -requireAdmin -noConsole` and `assets\icon.ico`, and saved to `Builds\` as `Winget Update Manager v<version>.exe`.
+### Build a release
+
+Double-click **Build.cmd** in the repo folder. It reads `build.json`, checks every script for syntax errors and that `$script:AppVersion` matches the newest `CHANGELOG.md` entry, runs PSScriptAnalyzer if it's installed, copies the release files into `..\Builds\Winget Update Manager v<version>\`, zips that folder for the GitHub release, refreshes `..\Builds\Winget Update Manager.lnk` (what the Home Launcher starts) and scans the result with ESET's command-line scanner if it's installed.
 
 ## 🚀 Usage
 
-Open the app and it checks for updates straight away. Use the sidebar to switch between updates, search results, installed apps and excluded apps, then select apps in the list and use the matching **Selected** button. Type in the filter box to narrow the list; it only changes what's shown.
+Start Winget Update Manager (the shortcut, the Start menu, or **Winget Update Manager.cmd**) and accept the UAC prompt. It checks for updates straight away. Use the sidebar to switch between updates, search results, installed apps and excluded apps, then select apps in the list and use the matching **Selected** button. Type in the filter box to narrow the list; it only changes what's shown.
 
 ### Unattended mode (Task Scheduler or Intune)
 
+Point the task at the script in the release folder (or `src\` in the repo) and tick **Run with highest privileges**:
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\src\Winget-Update-Manager.ps1 -UpgradeAll -Silent
-"Winget Update Manager v1.01.exe" -UpgradeAll -Silent
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Tools\Winget Update Manager v1.02\Winget-Update-Manager.ps1" -UpgradeAll -Silent
 ```
+
+Started without admin rights, it asks for them (UAC), waits for the elevated run and returns winget's exit code.
 
 | Switch | What it does |
 | --- | --- |

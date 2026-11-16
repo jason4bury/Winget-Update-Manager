@@ -2,11 +2,30 @@
 
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with versions written as
-v<major>.<minor> to match the exe names. History from before the move to this
+v<major>.<minor> to match the release folder names. History from before the move to this
 numbering (1.0.0 to 1.15.4, as "WinGet GUI") is kept in
 [docs/HISTORY-before-1.00.md](docs/HISTORY-before-1.00.md).
 
 ## [Unreleased]
+
+## [1.02] - 2026-11-16
+### Changed
+- **No exe any more.** Antivirus programs (ESET among them) kept flagging the PS2EXE exe as a
+  generic trojan by mistake, so the release is now the script itself: download
+  `Winget-Update-Manager-v1.02.zip`, unzip it and double-click **Winget Update Manager.cmd**.
+  It makes a shortcut there and in the Start menu and starts the app. Settings, logs and
+  exclusions are unchanged.
+- The app asks for administrator rights itself (UAC) when it starts, as the exe did.
+- The taskbar button shows the app's own icon, and pinning it pins the app.
+- The icon is now `assets\Winget-Update-Manager.ico` (was `assets\icon.ico`).
+- `Build.cmd` replaces the shared `Build-Tool.ps1` build: it makes the release folder, its zip
+  and `Builds\Winget Update Manager.lnk` for the Home Launcher, and ESET-scans them.
+- About window lists what's new in v1.02, and opens straight away after the first time
+  (the winget version is looked up once per session).
+
+### Fixed
+- Unattended mode (`-UpgradeAll`) started without admin rights returned 0 straight away after
+  asking for elevation. It now waits for the elevated run and returns winget's exit code.
 
 ## [1.01] - 2026-11-11
 ### Changed
