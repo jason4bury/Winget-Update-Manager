@@ -67,7 +67,7 @@ param(
 # The app's display name, used for the window, dialogs and the settings/log folders.
 $script:AppName    = 'Winget Update Manager'
 # Must match the newest version in CHANGELOG.md (Build.cmd checks they agree).
-$script:AppVersion = '1.02'
+$script:AppVersion = '1.03'
 # Taskbar ID, the same one the shortcut carries, so the taskbar button shows this app's icon
 # and a pinned button starts the app (see New-WingetUpdateManagerShortcut.ps1).
 $script:AppId      = 'jason4bury.Winget-Update-Manager'
@@ -569,6 +569,55 @@ if (-not $script:WingetExe) {
 }
 
 # ---------------------------------------------------------------------------
+# Look: the light look (cream, white cards) or a dark version of it. The Theme
+# setting picks one when the window opens: Light, Dark or System (follow
+# Windows). Every window's XAML and every colour made in code passes through
+# Convert-ThemeColour, which swaps each light colour for its dark partner.
+# The blue header, the mascot and the bright message badges stay the same.
+# ---------------------------------------------------------------------------
+$script:DarkColours = @{
+    '#FFF7EA' = '#1B1824'; '#FFFFFF' = '#26222F'; '#FBF7F0' = '#221E2B'; '#F3ECDD' = '#2C2838'; '#EADFCB' = '#3B3549'
+    '#2B2340' = '#ECE6F7'; '#5E5672' = '#BDB4D0'; '#8A80A0' = '#A69CBE'; '#9D93C0' = '#ACA2CB'; '#EEE8FF' = '#3A3354'
+    '#EDE8FF' = '#3A3354'; '#CDEFFF' = '#24465C'; '#CFE0FF' = '#33406B'; '#7BE0A0' = '#2E7D4F'; '#FFE066' = '#7A6414'
+    '#FFB4C2' = '#7E3B4A'; '#7FD8FF' = '#2C6A86'
+}
+$script:ThemeMode = 'Light'
+try {
+    if (Test-Path -LiteralPath (Join-Path $env:APPDATA "$($script:AppName)\settings.json")) {
+        $t = (Get-Content -LiteralPath (Join-Path $env:APPDATA "$($script:AppName)\settings.json") -Raw -Encoding UTF8 | ConvertFrom-Json).Theme
+        if ($t -in 'Light', 'Dark', 'System') { $script:ThemeMode = [string]$t }
+    }
+} catch { }
+function Test-DarkLook([string]$Mode) {
+    if ($Mode -eq 'Dark') { return $true }
+    if ($Mode -eq 'System') {
+        try { return ([int](Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name AppsUseLightTheme -ErrorAction Stop).AppsUseLightTheme -eq 0) } catch { return $false }
+    }
+    return $false
+}
+$script:IsDark = Test-DarkLook $script:ThemeMode
+function Convert-ThemeColour([string]$Text) {
+    if (-not $script:IsDark -or -not $Text) { return $Text }
+    return [regex]::Replace($Text, '#([0-9A-Fa-f]{2})?([0-9A-Fa-f]{6})\b', {
+        param($m)
+        $key = '#' + $m.Groups[2].Value.ToUpperInvariant()
+        if ($script:DarkColours.ContainsKey($key)) { '#' + $m.Groups[1].Value + $script:DarkColours[$key].Substring(1) } else { $m.Value }
+    })
+}
+function ConvertTo-ThemedXml([xml]$Doc) { return [xml](Convert-ThemeColour $Doc.OuterXml) }
+function Set-DarkTitleBar($Win) {
+    if (-not $script:IsDark) { return }
+    try {
+        if (-not ('WingetUpdateManager.Dwm' -as [type])) {
+            Add-Type -Namespace 'WingetUpdateManager' -Name 'Dwm' -MemberDefinition '[DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);'
+        }
+        $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Win)).Handle
+        $v = 1
+        if ($hwnd -ne [IntPtr]::Zero) { [void][WingetUpdateManager.Dwm]::DwmSetWindowAttribute($hwnd, 20, [ref]$v, 4) }
+    } catch { }
+}
+
+# ---------------------------------------------------------------------------
 # UI definition
 # ---------------------------------------------------------------------------
 [xml]$xaml = @'
@@ -606,7 +655,7 @@ if (-not $script:WingetExe) {
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Grid>
-                            <Border x:Name="Shadow" CornerRadius="17" Background="#2B2340" Margin="0,3,0,-3" Opacity="0.9"/>
+                            <Border x:Name="Shadow" CornerRadius="17" Background="#2B2341" Margin="0,3,0,-3" Opacity="0.9"/>
                             <Border x:Name="Face" CornerRadius="17" Background="{TemplateBinding Background}"
                                     BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
                                 <Grid>
@@ -763,10 +812,12 @@ if (-not $script:WingetExe) {
                 <Image x:Name="ImgLogo" Grid.Column="0" Width="58" Height="58" Margin="0,0,12,0" VerticalAlignment="Center"
                        RenderOptions.BitmapScalingMode="HighQuality"/>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock x:Name="TxtAppName" Text="Winget Update Manager" FontSize="23" FontWeight="Bold" Foreground="#FFFFFF"/>
-                    <TextBlock x:Name="TxtGreeting" Text="Keeping your apps fresh, no terminal needed." FontSize="13" Foreground="#FFFFFF" Margin="1,1,0,0"/>
+                    <TextBlock x:Name="TxtAppName" Text="Winget Update Manager" FontSize="23" FontWeight="Bold" Foreground="#FEFEFE"/>
+                    <TextBlock x:Name="TxtGreeting" Text="Keeping your apps fresh, no terminal needed." FontSize="13" Foreground="#FEFEFE" Margin="1,1,0,0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnLook" Content="Look" Tag="&#xE790;" Style="{StaticResource HeaderButton}" ToolTip="Light, dark, or the same as Windows. Used the next time it starts."/>
+                    <Button x:Name="BtnHelp" Content="Help" Tag="&#xE897;" Style="{StaticResource HeaderButton}" ToolTip="How Winget Update Manager works (F1)"/>
                     <Button x:Name="BtnAbout" Content="About" Tag="&#xE946;" Style="{StaticResource HeaderButton}"/>
                     <Button x:Name="BtnExit" Content="Exit" Tag="&#xE7E8;" Style="{StaticResource HeaderButton}"/>
                 </StackPanel>
@@ -850,8 +901,8 @@ if (-not $script:WingetExe) {
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" CornerRadius="14" Background="#2B2340" Padding="14,6" Margin="0,0,16,0" VerticalAlignment="Center">
-                    <TextBlock x:Name="TxtView" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" Text="Updates available"/>
+                <Border Grid.Column="0" CornerRadius="14" Background="#2B2341" Padding="14,6" Margin="0,0,16,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtView" FontWeight="Bold" FontSize="14" Foreground="#FEFEFE" Text="Updates available"/>
                 </Border>
                 <WrapPanel Grid.Column="1" VerticalAlignment="Center">
                     <CheckBox x:Name="ChkIncludeUnknown" Content="Include unknown versions" Margin="0,3,16,3" IsChecked="True"/>
@@ -967,7 +1018,7 @@ if (-not $script:WingetExe) {
                           ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Background="Transparent"/>
 
             <!-- Log -->
-            <Border Grid.Row="3" CornerRadius="16" Background="#2B2340" Padding="12,8,4,4" BorderBrush="#2B2340" BorderThickness="1.5">
+            <Border Grid.Row="3" CornerRadius="16" Background="#2B2341" Padding="12,8,4,4" BorderBrush="#2B2340" BorderThickness="1.5">
                 <DockPanel>
                     <Grid DockPanel.Dock="Top" Margin="2,0,8,6">
                         <TextBlock Text="WHAT'S HAPPENING" FontSize="11" FontWeight="Bold" Foreground="#9D93C0" VerticalAlignment="Center"/>
@@ -977,7 +1028,7 @@ if (-not $script:WingetExe) {
                     </Grid>
                     <TextBox x:Name="TxtLog" FontFamily="Consolas" FontSize="12"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                             IsReadOnly="True" TextWrapping="NoWrap" Background="#2B2340" Foreground="#EDE8FF" BorderThickness="0"/>
+                             IsReadOnly="True" TextWrapping="NoWrap" Background="#2B2341" Foreground="#EDE8FE" BorderThickness="0"/>
                 </DockPanel>
             </Border>
 
@@ -1000,8 +1051,10 @@ if (-not $script:WingetExe) {
 </Window>
 '@
 
+$xaml = ConvertTo-ThemedXml $xaml
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
+$window.Add_SourceInitialized({ Set-DarkTitleBar $this })
 $window.Title = $script:AppName
 $window.FindName('TxtAppName').Text = $script:AppName
 
@@ -1031,6 +1084,8 @@ $btnExcludeSelected   = $window.FindName('BtnExcludeSelected')
 $btnRemoveExclusion   = $window.FindName('BtnRemoveExclusion')
 $btnCancel            = $window.FindName('BtnCancel')
 $btnAbout             = $window.FindName('BtnAbout')
+$btnLook              = $window.FindName('BtnLook')
+$btnHelp              = $window.FindName('BtnHelp')
 $btnExit              = $window.FindName('BtnExit')
 $txtSearchQuery       = $window.FindName('TxtSearchQuery')
 $btnSearch            = $window.FindName('BtnSearch')
@@ -1438,6 +1493,7 @@ function Export-AppSetting {
             RemoveDesktopIcons = [bool]$chkRemoveDesktopIcons.IsChecked
             Maximized          = ($window.WindowState -eq 'Maximized')
             LayoutVersion      = $script:layoutVersion
+            Theme              = $script:ThemeMode
             LogHeight          = [math]::Round($logRow.ActualHeight)
         }
         if (-not $bounds.IsEmpty) {
@@ -2008,7 +2064,7 @@ function New-DetailsText {
     $tb.TextWrapping = 'Wrap'
     $tb.FontSize     = $Size
     $tb.FontWeight   = $Weight
-    $tb.Foreground   = (New-Object System.Windows.Media.BrushConverter).ConvertFromString($Color)
+    $tb.Foreground   = (New-Object System.Windows.Media.BrushConverter).ConvertFromString((Convert-ThemeColour $Color))
     $tb.Margin       = $Margin
     $tb.LineHeight   = [math]::Round($Size * 1.45)
     return $tb
@@ -2082,11 +2138,11 @@ function Complete-PackageDetail {
     if ($version) {
         $badge = New-Object System.Windows.Controls.Border
         $badge.CornerRadius = 9
-        $badge.Background   = (New-Object System.Windows.Media.BrushConverter).ConvertFromString('#2B2340')
+        $badge.Background   = (New-Object System.Windows.Media.BrushConverter).ConvertFromString('#2B2341')
         $badge.Padding      = '9,2,9,3'
         $badge.Margin       = '0,8,0,0'
         $badge.HorizontalAlignment = 'Left'
-        $badge.Child = New-DetailsText -Text "Version $version" -Size 12 -Weight 'SemiBold' -Color '#FFFFFF'
+        $badge.Child = New-DetailsText -Text "Version $version" -Size 12 -Weight 'SemiBold' -Color '#FEFEFE'
         [void]$pnlDetails.Children.Add($badge)
     }
 
@@ -2146,7 +2202,7 @@ function Complete-PackageDetail {
         foreach ($tag in ($tags | Select-Object -First 20)) {
             $pill = New-Object System.Windows.Controls.Border
             $pill.CornerRadius = 10
-            $pill.Background   = (New-Object System.Windows.Media.BrushConverter).ConvertFromString('#EEE8FF')
+            $pill.Background   = (New-Object System.Windows.Media.BrushConverter).ConvertFromString((Convert-ThemeColour '#EEE8FF'))
             $pill.Padding      = '8,2,8,3'
             $pill.Margin       = '0,0,6,6'
             $pill.Child = New-DetailsText -Text $tag -Size 12
@@ -2220,7 +2276,7 @@ function Show-FriendlyDialog {
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Image x:Name="DlgLogo" Width="54" Height="54" Margin="0,0,12,0" RenderOptions.BitmapScalingMode="HighQuality"/>
-                <TextBlock x:Name="DlgTitle" Grid.Column="1" FontSize="19" FontWeight="Bold" Foreground="#FFFFFF"
+                <TextBlock x:Name="DlgTitle" Grid.Column="1" FontSize="19" FontWeight="Bold" Foreground="#FEFEFE"
                            TextWrapping="Wrap" VerticalAlignment="Center"/>
             </Grid>
         </Border>
@@ -2233,7 +2289,7 @@ function Show-FriendlyDialog {
                 </Grid.ColumnDefinitions>
                 <Border x:Name="DlgBadge" Width="40" Height="40" CornerRadius="20" BorderBrush="#2B2340" BorderThickness="1.5"
                         VerticalAlignment="Top" Margin="0,0,12,0">
-                    <TextBlock x:Name="DlgGlyph" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="#2B2340"
+                    <TextBlock x:Name="DlgGlyph" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="#2B2341"
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <TextBlock x:Name="DlgMessage" Grid.Column="1" TextWrapping="Wrap" LineHeight="20" VerticalAlignment="Center"/>
@@ -2256,7 +2312,8 @@ function Show-FriendlyDialog {
     </StackPanel>
 </Window>
 '@
-        $dlg = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $dlgXaml))
+        $dlg = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader (ConvertTo-ThemedXml $dlgXaml)))
+        $dlg.Add_SourceInitialized({ Set-DarkTitleBar $this })
         $dlg.Resources.MergedDictionaries.Add($window.Resources)
         if ($window.IsLoaded) { $dlg.Owner = $window } else { $dlg.WindowStartupLocation = 'CenterScreen' }
         if ($window.Icon) { $dlg.Icon = $window.Icon }
@@ -2273,7 +2330,7 @@ function Show-FriendlyDialog {
             $dlg.FindName('DlgItemsCard').Visibility = 'Visible'
             $dlg.FindName('DlgItemsTitle').Text = $ItemsTitle
             $panel = $dlg.FindName('DlgItems')
-            $soft  = (New-Object System.Windows.Media.BrushConverter).ConvertFromString('#5E5672')
+            $soft  = (New-Object System.Windows.Media.BrushConverter).ConvertFromString((Convert-ThemeColour '#5E5672'))
             foreach ($item in ($list | Select-Object -First $MaxItems)) {
                 $row = New-Object System.Windows.Controls.TextBlock
                 $row.TextWrapping = 'Wrap'
@@ -2912,6 +2969,10 @@ $txtSearchQuery.Add_KeyDown({
 # ---------------------------------------------------------------------------
 $script:AboutWhatsNew = [ordered]@{
     $script:AppVersion = @(
+        'A dark look: the Look button picks Light, Dark or the same as Windows',
+        'Help: the Help button (or F1) explains every button, the options and what to do when winget has trouble'
+    )
+    '1.02' = @(
         'No exe any more: it runs as a script from a shortcut, so antivirus no longer flags it by mistake',
         'Pin it to the taskbar and the button keeps its own icon; it still asks for admin rights when it starts'
     )
@@ -2949,9 +3010,9 @@ function Show-AboutWindow {
                 </Grid.ColumnDefinitions>
                 <Image x:Name="AboutLogo" Width="76" Height="76" Margin="0,0,14,0" RenderOptions.BitmapScalingMode="HighQuality"/>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock x:Name="AboutName" FontSize="22" FontWeight="Bold" Foreground="#FFFFFF"/>
-                    <Border CornerRadius="10" Background="#2B2340" Padding="10,3" Margin="0,6,0,0" HorizontalAlignment="Left">
-                        <TextBlock x:Name="AboutVersion" Foreground="#FFFFFF" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="AboutName" FontSize="22" FontWeight="Bold" Foreground="#FEFEFE"/>
+                    <Border CornerRadius="10" Background="#2B2341" Padding="10,3" Margin="0,6,0,0" HorizontalAlignment="Left">
+                        <TextBlock x:Name="AboutVersion" Foreground="#FEFEFE" FontWeight="SemiBold"/>
                     </Border>
                 </StackPanel>
             </Grid>
@@ -2989,7 +3050,8 @@ function Show-AboutWindow {
 </Window>
 '@
 
-    $about = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $aboutXaml))
+    $about = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader (ConvertTo-ThemedXml $aboutXaml)))
+    $about.Add_SourceInitialized({ Set-DarkTitleBar $this })
     # Share the main window's styles (buttons, cards, titles).
     $about.Resources.MergedDictionaries.Add($window.Resources)
     $about.Owner = $window
@@ -3028,6 +3090,92 @@ function Show-AboutWindow {
     $about.FindName('AboutClose').Add_Click({ $about.Close() }.GetNewClosure())
     [void]$about.ShowDialog()
 }
+
+# ---------------------------------------------------------------------------
+# Help window - the same look as About, sharing the main window's styles.
+# ---------------------------------------------------------------------------
+$script:HelpTopics = @(
+    ,@('Updates', "Winget Update Manager checks for updates when it opens and lists the outdated apps. Upgrade All updates every one that isn't excluded; Upgrade Selected updates just the ones you pick (Ctrl+click or Shift+click to pick more than one). Check for Updates looks again.")
+    ,@('Finding and installing apps', "Type in the search box and press Enter to search winget's sources, then Install Selected. Installed Apps lists everything on the PC, including apps that didn't come from winget, and Uninstall Selected removes the ones you pick.")
+    ,@('Keeping apps as they are', "Exclude Selected keeps the apps you pick out of Upgrade All. Exclusions are winget pins, so they also apply to winget upgrade --all and to unattended runs. Excluded Apps shows them, and lets you bring them back.")
+    ,@('Moving to another PC', "Export List saves the apps on this PC to a file; Import List on the other PC installs them (winget export and winget import).")
+    ,@('Details and the log', "Select an app and the Details pane fills in by itself: publisher, licence, description, release notes and links. The log shows what winget is doing, with a progress card and a Cancel button that also stops the installer winget started. Save Log keeps a copy.")
+    ,@('Options', "Include unknown versions: also list apps whose installed version winget can't read.`nSkip Microsoft Store source: leave Store apps out of checks and upgrades.`nTidy up new desktop icons: after installs and upgrades, remove new desktop icons whose names match the apps involved.")
+    ,@('When winget has trouble', "Failed when searching source: try Reset Sources, then Diagnose Network, which also checks for a proxy or SSL inspection. Winget Update Manager needs administrator rights, so it asks when it starts.")
+    ,@('Look and keys', "Look switches between Light, Dark and the same as Windows; the new look is used the next time it starts.`nF1  this help     Enter in the search box  search")
+)
+function Show-HelpWindow {
+    [xml]$helpXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Help" Width="680" Height="640" MinWidth="480" MinHeight="400"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="#FFF7EA" FontFamily="Segoe UI" FontSize="13" Foreground="#2B2340">
+    <DockPanel Margin="16">
+        <Border DockPanel.Dock="Top" CornerRadius="20" Padding="16,12" BorderBrush="#2B2340" BorderThickness="1.5">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#3FA4EE" Offset="0"/>
+                    <GradientStop Color="#5B6CF0" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
+            <StackPanel Orientation="Horizontal">
+                <Image x:Name="HelpLogo" Width="54" Height="54" Margin="0,0,12,0" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Help" FontSize="22" FontWeight="Bold" Foreground="#FEFEFE"/>
+                    <TextBlock Text="How Winget Update Manager works" Foreground="#FEFEFE"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+        <Button x:Name="HelpClose" DockPanel.Dock="Bottom" HorizontalAlignment="Right" Content="Close" Tag="&#xE73E;" Style="{DynamicResource MintButton}"
+                Margin="0,14,0,4" IsDefault="True" IsCancel="True"/>
+        <ScrollViewer Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="HelpBody"/>
+        </ScrollViewer>
+    </DockPanel>
+</Window>
+'@
+    $help = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader (ConvertTo-ThemedXml $helpXaml)))
+    $help.Add_SourceInitialized({ Set-DarkTitleBar $this })
+    $help.Resources.MergedDictionaries.Add($window.Resources)
+    $help.Owner = $window
+    if ($window.Icon) { $help.Icon = $window.Icon }
+    $help.Title = "Help - $($script:AppName) v$($script:AppVersion)"
+    $help.FindName('HelpLogo').Source = $imgLogo.Source
+    $body = $help.FindName('HelpBody')
+    foreach ($t in $script:HelpTopics) {
+        $card = New-Object System.Windows.Controls.Border
+        $card.Style = $window.FindResource('CardBox')
+        $card.Padding = New-Object System.Windows.Thickness 14, 12, 14, 12
+        $card.Margin = New-Object System.Windows.Thickness 0, 0, 0, 10
+        $stack = New-Object System.Windows.Controls.StackPanel
+        $title = New-Object System.Windows.Controls.TextBlock
+        $title.Text = $t[0].ToUpper(); $title.Style = $window.FindResource('CardTitle')
+        $text = New-Object System.Windows.Controls.TextBlock
+        $text.Text = $t[1]; $text.TextWrapping = 'Wrap'; $text.LineHeight = 20
+        [void]$stack.Children.Add($title); [void]$stack.Children.Add($text)
+        $card.Child = $stack
+        [void]$body.Children.Add($card)
+    }
+    $help.FindName('HelpClose').Add_Click({ $help.Close() })
+    [void]$help.ShowDialog()
+}
+
+function Switch-Look {
+    # Light -> Dark -> System -> Light. Saved straight away; used the next time it starts.
+    $script:ThemeMode = switch ($script:ThemeMode) { 'Light' { 'Dark' } 'Dark' { 'System' } default { 'Light' } }
+    Update-LookButton
+    Export-AppSetting
+    $word = switch ($script:ThemeMode) { 'Dark' { 'dark' } 'System' { 'the same as Windows' } default { 'light' } }
+    Write-AppLog "Look set to $word. It's used the next time Winget Update Manager starts.`r`n"
+}
+function Update-LookButton {
+    $btnLook.Content = switch ($script:ThemeMode) { 'Dark' { 'Dark' } 'System' { 'Auto' } default { 'Light' } }
+}
+Update-LookButton
+$btnLook.Add_Click({ Switch-Look })
+$btnHelp.Add_Click({ Show-HelpWindow })
+$window.Add_PreviewKeyDown({ param($s, $e) if ($e.Key -eq 'F1') { Show-HelpWindow; $e.Handled = $true } })
 
 $btnAbout.Add_Click({
     try {

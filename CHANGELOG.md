@@ -8,6 +8,17 @@ numbering (1.0.0 to 1.15.4, as "WinGet GUI") is kept in
 
 ## [Unreleased]
 
+## [1.03] - 2026-11-19
+### Added
+- **Dark look.** A new **Look** button in the header switches between **Light** (the look so far,
+  and the default), **Dark** and **Auto** (the same as Windows). The cards, list, buttons, details,
+  About, Help, the message boxes and the title bar all follow it; the blue header, the mascot and
+  the bright message badges stay the same. The new look is used the next time it starts.
+- **Help.** A **Help** button in the header (or F1) explains updates, finding and installing apps,
+  exclusions, moving to another PC, the details pane and log, the options, and what to do when
+  winget has trouble.
+- About lists both under 1.03.
+
 ## [1.02] - 2026-11-16
 ### Changed
 - **No exe any more.** Antivirus programs (ESET among them) kept flagging the PS2EXE exe as a

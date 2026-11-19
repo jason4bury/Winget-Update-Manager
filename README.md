@@ -6,7 +6,7 @@
 
 A friendly window for winget: check for updates, upgrade, install and remove apps without the command line.
 
-![Version](https://img.shields.io/badge/version-v1.02-5B7CFA)
+![Version](https://img.shields.io/badge/version-v1.03-5B7CFA)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?logo=windows)
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE?logo=powershell&logoColor=white)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
@@ -25,6 +25,7 @@ A friendly window for winget: check for updates, upgrade, install and remove app
 - **Tidy up new desktop icons** that installs and upgrades leave behind, only removing icons whose names match the apps involved.
 - **Reset Sources** and **Diagnose Network** for the "Failed when searching source" errors, including proxy and SSL inspection checks.
 - **Unattended mode** (`-UpgradeAll`) for Task Scheduler or Intune, with a log file and winget's exit code.
+- **Light or dark**: the **Look** button picks Light, Dark or the same as Windows. **Help** (or F1) explains every button.
 - Friendly pop-ups that say what each button does. For risky ones, Enter picks the safe answer.
 
 ## 🖼️ Screenshots
@@ -39,7 +40,7 @@ A friendly window for winget: check for updates, upgrade, install and remove app
 
 ## 📦 Installation
 
-1. Download `Winget-Update-Manager-v1.02.zip` from the [latest release](../../releases/latest) and unzip it wherever you like to keep it.
+1. Download `Winget-Update-Manager-v1.03.zip` from the [latest release](../../releases/latest) and unzip it wherever you like to keep it.
 2. Double-click **Winget Update Manager.cmd** in the unzipped folder. It makes a **Winget Update Manager** shortcut there and in the Start menu, and starts the app. From then on, use the shortcut, the Start menu or a pinned taskbar button.
 
 The app asks for administrator rights (UAC) each time it starts. Nothing is installed and no Windows settings are changed. The shortcut runs the script with PowerShell's execution policy bypassed for that run only.
@@ -69,7 +70,7 @@ Start Winget Update Manager (the shortcut, the Start menu, or **Winget Update Ma
 Point the task at the script in the release folder (or `src\` in the repo) and tick **Run with highest privileges**:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Tools\Winget Update Manager v1.02\Winget-Update-Manager.ps1" -UpgradeAll -Silent
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Tools\Winget Update Manager v1.03\Winget-Update-Manager.ps1" -UpgradeAll -Silent
 ```
 
 Started without admin rights, it asks for them (UAC), waits for the elevated run and returns winget's exit code.
